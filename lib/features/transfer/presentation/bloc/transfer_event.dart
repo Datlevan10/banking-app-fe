@@ -13,6 +13,16 @@ final class TransferStarted extends TransferEvent {
   const TransferStarted();
 }
 
+/// Open the flow pre-populated from external data (e.g. a scanned QR code).
+final class TransferPrefillRequested extends TransferEvent {
+  const TransferPrefillRequested(this.prefill);
+
+  final TransferPrefill prefill;
+
+  @override
+  List<Object?> get props => <Object?>[prefill];
+}
+
 /// User picked a beneficiary from the quick list.
 final class TransferBeneficiarySelected extends TransferEvent {
   const TransferBeneficiarySelected(this.beneficiary);

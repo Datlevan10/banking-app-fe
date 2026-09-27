@@ -9,7 +9,7 @@ import '../../../../core/widgets/custom_text_field.dart';
 import '../../../../core/widgets/numeric_keypad.dart';
 import '../../../../core/widgets/pin_input.dart';
 import '../../../home/presentation/pages/home_page.dart';
-import '../../data/repositories/auth_repository_impl.dart';
+import '../../data/auth_repository_factory.dart';
 import '../bloc/auth_bloc.dart';
 
 /// Login screen: PIN + biometric sign-in with a username/password fallback.
@@ -22,7 +22,7 @@ class LoginPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider<AuthBloc>(
-      create: (_) => AuthBloc(repository: AuthRepositoryImpl())
+      create: (_) => AuthBloc(repository: createAuthRepository())
         ..add(const AuthBiometricAvailabilityRequested()),
       child: const _LoginView(),
     );

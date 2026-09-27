@@ -13,23 +13,32 @@ import '../../data/repositories/transfer_repository_impl.dart';
 import '../../domain/entities/transfer_entity.dart';
 import '../../domain/repositories/transfer_repository.dart';
 import '../bloc/transfer_bloc.dart';
+import '../models/transfer_prefill.dart';
 import '../widgets/beneficiary_selector.dart';
 import '../widgets/summary_row.dart';
 
 /// Money-transfer screen: a three-step wizard (input → confirmation →
 /// success/failure receipt) driven entirely by [TransferBloc].
 class TransferPage extends StatelessWidget {
-  const TransferPage({super.key, this.repository});
+  const TransferPage({super.key, this.repository, this.prefill});
 
   /// Optional injection point for tests; falls back to the default impl.
   final TransferRepository? repository;
 
+  /// When provided (e.g. from a QR scan), the flow opens pre-populated.
+  final TransferPrefill? prefill;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider<TransferBloc>(
-      create: (_) => TransferBloc(
-        repository: repository ?? TransferRepositoryImpl(),
-      )..add(const TransferStarted()),
+      create: (_) {
+        final TransferBloc bloc = TransferBloc(
+          repository: repository ?? TransferRepositoryImpl(),
+        );
+        return prefill == null
+            ? (bloc..add(const TransferStarted()))
+            : (bloc..add(TransferPrefillRequested(prefill!)));
+      },
       child: const _TransferView(),
     );
   }
@@ -101,6 +110,19 @@ class _InputStep extends StatefulWidget {
 class _InputStepState extends State<_InputStep> {
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _remarksController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Seed the fields from any pre-filled state (e.g. a scanned QR code).
+    final TransferState state = widget.state;
+    if (state.amount > 0) {
+      _amountController.text = state.amount % 1 == 0
+          ? state.amount.toInt().toString()
+          : state.amount.toString();
+    }
+    _remarksController.text = state.remarks;
+  }
 
   @override
   void dispose() {
