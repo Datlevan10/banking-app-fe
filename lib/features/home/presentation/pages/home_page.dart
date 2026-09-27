@@ -6,6 +6,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/balance_card.dart';
 import '../../../../core/widgets/transaction_tile.dart';
+import '../../../qr_scan/presentation/pages/qr_scan_page.dart';
 import '../../../transfer/presentation/pages/transfer_page.dart';
 import '../../data/repositories/home_repository_impl.dart';
 import '../bloc/home_bloc.dart';
@@ -119,7 +120,11 @@ class _DashboardContent extends StatelessWidget {
               QuickAction(
                 label: 'QR Scan',
                 icon: Icons.qr_code_scanner_rounded,
-                onTap: () {},
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const QrScanPage(),
+                  ),
+                ),
               ),
             ],
           ),

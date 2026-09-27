@@ -6,6 +6,8 @@ import 'package:banking_app_fe/core/theme/app_theme.dart';
 import 'package:banking_app_fe/features/auth/presentation/pages/login_page.dart';
 import 'package:banking_app_fe/features/home/presentation/pages/home_page.dart';
 import 'package:banking_app_fe/features/onboarding/presentation/pages/splash_page.dart';
+import 'package:banking_app_fe/features/qr_scan/data/repositories/qr_scan_repository_impl.dart';
+import 'package:banking_app_fe/features/qr_scan/presentation/pages/qr_scan_page.dart';
 import 'package:banking_app_fe/features/register/data/repositories/register_repository_impl.dart';
 import 'package:banking_app_fe/features/register/presentation/pages/register_page.dart';
 import 'package:banking_app_fe/features/transfer/data/repositories/transfer_repository_impl.dart';
@@ -272,6 +274,56 @@ void main() {
 
       expect(find.textContaining('incorrect'), findsWidgets);
       expect(find.text('Enter verification code'), findsOneWidget);
+    });
+  });
+
+  group('QrScanPage', () {
+    testWidgets('successful scan routes to a pre-filled transfer',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(500, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(_wrap(
+        QrScanPage(
+          repository: QrScanRepositoryImpl(
+            scanDuration: const Duration(milliseconds: 20),
+          ),
+        ),
+      ));
+
+      // Drive with explicit pumps (the scanner has a repeating animation).
+      await tester.pump(); // start scan
+      await tester.pump(const Duration(milliseconds: 300)); // permission + scan
+      await tester.pump(); // listener navigates
+      await tester.pump(const Duration(seconds: 1)); // transfer prefill loads
+      await tester.pump(const Duration(seconds: 1));
+
+      // Landed on the transfer input step, pre-filled from the scanned code.
+      expect(find.text('Review transfer'), findsOneWidget);
+      expect(find.text('NGUYEN'), findsOneWidget); // beneficiary avatar label
+      expect(find.text('500'), findsWidgets); // pre-filled amount
+
+      // Tear down the tree to dispose animations cleanly.
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('permission denied shows an error with retry',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(_wrap(
+        QrScanPage(
+          repository: QrScanRepositoryImpl(
+            permissionGranted: false,
+            scanDuration: const Duration(milliseconds: 20),
+          ),
+        ),
+      ));
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.textContaining('Camera access'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
     });
   });
 }

@@ -1,85 +1,78 @@
-import 'package:local_auth/local_auth.dart';
-
+import '../../../../core/config/app_config.dart';
+import '../../../../core/error/app_exception.dart';
 import '../../domain/entities/auth_user.dart';
 import '../../domain/failures/auth_exception.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../datasources/auth_remote_data_source.dart';
+import '../dtos/login_request_dto.dart';
+import '../dtos/login_response_dto.dart';
 
-/// Concrete [AuthRepository] backed by the OS biometric APIs (`local_auth`).
+/// Production [AuthRepository]: credential sign-in calls the C# .NET backend
+/// (`POST /api/v1/auth/login`); the returned JWT is persisted via a token store
+/// for the [AuthInterceptor] to attach to subsequent requests.
 ///
-/// For this demo, PIN and credential checks are validated locally against
-/// fixed values; swap these branches for real API calls without touching the
-/// BLoC or UI. [LocalAuthentication] is injected so the class stays testable.
+/// PIN and biometric sign-in are delegated to [_fallback] (the mock) until
+/// their backend endpoints land — a deliberate strangler-fig migration. On a
+/// connection error, credential sign-in also falls back when
+/// [AppConfig.fallbackToMockWhenOffline] is enabled, so local testing survives
+/// an offline backend.
 class AuthRepositoryImpl implements AuthRepository {
-  AuthRepositoryImpl({LocalAuthentication? localAuth})
-      : _localAuth = localAuth ?? LocalAuthentication();
+  AuthRepositoryImpl({
+    required this._remote,
+    required this._onToken,
+    required this._fallback,
+  });
 
-  final LocalAuthentication _localAuth;
-
-  // Demo credentials — replace with a real backend call.
-  static const String _demoPin = '123456';
-  static const String _demoUsername = 'vandat';
-  static const String _demoPassword = 'password';
-
-  static const AuthUser _demoUser = AuthUser(id: 'usr_01', name: 'Van Dat');
-
-  @override
-  Future<bool> isBiometricAvailable() async {
-    try {
-      final bool canCheck = await _localAuth.canCheckBiometrics;
-      final bool isSupported = await _localAuth.isDeviceSupported();
-      if (!canCheck || !isSupported) return false;
-
-      // At least one biometric must actually be enrolled.
-      final List<BiometricType> enrolled =
-          await _localAuth.getAvailableBiometrics();
-      return enrolled.isNotEmpty;
-    } on Object {
-      // Unsupported platform / no plugin -> treat as unavailable, never crash.
-      return false;
-    }
-  }
-
-  @override
-  Future<AuthUser> authenticateWithBiometrics() async {
-    final bool didAuthenticate;
-    try {
-      didAuthenticate = await _localAuth.authenticate(
-        localizedReason: 'Authenticate to access your account',
-        biometricOnly: true,
-        // Retry automatically if the app is backgrounded mid-prompt.
-        persistAcrossBackgrounding: true,
-      );
-    } on Object {
-      throw const AuthException('Biometric authentication is unavailable.');
-    }
-
-    if (!didAuthenticate) {
-      throw const AuthException('Biometric authentication was cancelled.');
-    }
-    return _demoUser;
-  }
-
-  @override
-  Future<AuthUser> authenticateWithPin(String pin) async {
-    await _simulateLatency();
-    if (pin != _demoPin) {
-      throw const AuthException('Incorrect PIN. Please try again.');
-    }
-    return _demoUser;
-  }
+  final AuthRemoteDataSource _remote;
+  final Future<void> Function(String token) _onToken;
+  final AuthRepository _fallback;
 
   @override
   Future<AuthUser> authenticateWithCredentials({
     required String username,
     required String password,
   }) async {
-    await _simulateLatency();
-    if (username.trim() != _demoUsername || password != _demoPassword) {
-      throw const AuthException('Invalid username or password.');
+    try {
+      final LoginResponseDto response = await _remote.login(
+        LoginRequestDto(username: username, password: password),
+      );
+      await _onToken(response.accessToken);
+      return response.user.toEntity();
+    } on AppException catch (error) {
+      // Offline? Optionally fall back to the mock so local dev keeps working.
+      if (error is ConnectionException &&
+          AppConfig.fallbackToMockWhenOffline) {
+        return _fallback.authenticateWithCredentials(
+          username: username,
+          password: password,
+        );
+      }
+      throw _toAuthException(error);
+    } on FormatException {
+      throw const AuthException('Received an invalid response from the server.');
     }
-    return _demoUser;
   }
 
-  Future<void> _simulateLatency() =>
-      Future<void>.delayed(const Duration(milliseconds: 500));
+  // --- Not yet migrated: delegated to the fallback -------------------------
+
+  @override
+  Future<bool> isBiometricAvailable() => _fallback.isBiometricAvailable();
+
+  @override
+  Future<AuthUser> authenticateWithBiometrics() =>
+      _fallback.authenticateWithBiometrics();
+
+  @override
+  Future<AuthUser> authenticateWithPin(String pin) =>
+      _fallback.authenticateWithPin(pin);
+
+  /// Maps an infrastructure [AppException] to a user-facing [AuthException].
+  AuthException _toAuthException(AppException error) {
+    return switch (error) {
+      UnauthorizedException() ||
+      ValidationException() =>
+        const AuthException('Invalid username or password.'),
+      _ => AuthException(error.message),
+    };
+  }
 }

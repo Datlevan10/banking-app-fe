@@ -38,6 +38,7 @@ dependencies:
   equatable: ^2.0.8
   intl: ^0.20.3
   local_auth: ^3.0.1
+  dio: ^5.10.0
 
 dev_dependencies:
   flutter_test:

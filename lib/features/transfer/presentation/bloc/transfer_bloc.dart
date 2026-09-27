@@ -5,6 +5,7 @@ import '../../domain/entities/beneficiary.dart';
 import '../../domain/entities/transfer_entity.dart';
 import '../../domain/failures/transfer_failure.dart';
 import '../../domain/repositories/transfer_repository.dart';
+import '../models/transfer_prefill.dart';
 
 part 'transfer_event.dart';
 part 'transfer_state.dart';
@@ -14,6 +15,7 @@ part 'transfer_state.dart';
 class TransferBloc extends Bloc<TransferEvent, TransferState> {
   TransferBloc({required this._repository}) : super(const TransferState()) {
     on<TransferStarted>(_onStarted);
+    on<TransferPrefillRequested>(_onPrefillRequested);
     on<TransferBeneficiarySelected>(_onBeneficiarySelected);
     on<TransferAmountChanged>(_onAmountChanged);
     on<TransferRemarksChanged>(_onRemarksChanged);
@@ -39,6 +41,36 @@ class TransferBloc extends Bloc<TransferEvent, TransferState> {
       step: TransferStep.input,
       beneficiaries: beneficiaries,
       availableBalance: balance,
+    ));
+  }
+
+  Future<void> _onPrefillRequested(
+    TransferPrefillRequested event,
+    Emitter<TransferState> emit,
+  ) async {
+    emit(state.copyWith(step: TransferStep.loading));
+    final (List<Beneficiary> saved, double balance) = await (
+      _repository.getBeneficiaries(),
+      _repository.getAvailableBalance(),
+    ).wait;
+
+    // Build a beneficiary from the scanned payload and select it. Prepend it so
+    // it appears (selected) in the quick list even if it isn't already saved.
+    final TransferPrefill prefill = event.prefill;
+    final Beneficiary scanned = Beneficiary(
+      id: 'qr:${prefill.accountNumber}',
+      name: prefill.recipientName,
+      accountNumber: prefill.accountNumber,
+      bankName: prefill.bankName,
+    );
+
+    emit(state.copyWith(
+      step: TransferStep.input,
+      beneficiaries: <Beneficiary>[scanned, ...saved],
+      availableBalance: balance,
+      selectedBeneficiary: scanned,
+      amount: prefill.amount ?? 0,
+      remarks: prefill.remarks,
     ));
   }
 
